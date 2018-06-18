@@ -1,0 +1,126 @@
+#!/bin/bash
+
+#------------------------------------------------------------------------------
+# moves current window to the next edge in one of four directions
+# takes in one parameter, 'W', 'N', 'E', or 'S'
+# to move windows in that direction
+# uses bash and xdotool
+#------------------------------------------------------------------------------
+
+if [ "$1" = 'W' ]; then
+    axis='x'
+    axis_rev=-1
+    sort_dir='-r'
+fi
+if [ "$1" = 'N' ]; then
+    axis='y'
+    axis_rev=-1
+    sort_dir='-r'
+fi
+if [ "$1" = "E" ]; then
+    axis='x'
+    axis_rev=1
+fi
+if [ "$1" = 'S' ]; then
+    axis='y'
+    axis_rev=1
+fi
+
+#------------------------------------------------------------------------------
+# set offsets based on desktop environment
+# take account of title bar, panel, etc width and height
+#------------------------------------------------------------------------------
+
+win_offsetx=20
+win_offsety=0
+
+panel_offsetW=0
+panel_offsetN=27
+panel_offsetE=0
+panel_offsetS=0
+
+#------------------------------------------------------------------------------
+# grab screen and active window geometry
+#------------------------------------------------------------------------------
+
+screenwidth=`xdotool getdisplaygeometry | cut -d\  -f1`
+screenheight=`xdotool getdisplaygeometry | cut -d\  -f2`
+
+windowx=`xdotool getactivewindow getwindowgeometry | grep Position | cut -d: -f2 | cut -d, -f1`
+windowy=`xdotool getactivewindow getwindowgeometry | grep Position | cut -d, -f2 | cut -d\  -f1`
+windowwidth=`xdotool getactivewindow getwindowgeometry | grep Geometry | cut -d: -f2 | cut -dx -f1`
+windowheight=`xdotool getactivewindow getwindowgeometry | grep Geometry | cut -d: -f2 | cut -dx -f2`
+
+edgex[0]=`expr "$panel_offsetW" + "$win_offsetx"`
+edgex[1]=`expr $(expr $screenwidth - $panel_offsetE) - $windowwidth`
+edgey[0]="$panel_offsetN"
+edgey[1]=`expr $(expr $screenheight - $panel_offsetS) - $windowheight`
+
+arraysize=2
+
+#------------------------------------------------------------------------------
+# grab all other windows geometry and store as edge arrays
+#------------------------------------------------------------------------------
+
+windowids=`xdotool search --onlyvisible . 2>/dev/null`
+
+for wid in $windowids; do
+    if [ $wid = `xdotool getactivewindow` ]; then
+        continue
+    fi
+    win_raw=`xdotool getwindowgeometry $wid`
+    win_left=`echo $win_raw | cut -d: -f2 | cut -d, -f1`
+    win_top=`echo $win_raw | cut -d, -f2 | cut -d\  -f1`
+    win_width=`echo $win_raw | cut -d: -f4 | cut -dx -f1`
+    win_height=`echo $win_raw | cut -d: -f4 | cut -dx -f2`
+    win_right=`expr $win_left + $win_width`
+    win_bottom=`expr $win_top + $win_height`
+    edgex[$arraysize]=$win_left
+    edgex[`expr $arraysize + 1`]=`expr $(expr $win_left - $windowwidth) - $win_offsetx`
+    edgex[`expr $arraysize + 2`]=`expr $win_right + $win_offsetx`
+    edgex[`expr $arraysize + 3`]=`expr $win_right - $windowwidth`
+    edgey[$arraysize]=$win_top
+    edgey[`expr $arraysize + 1`]=`expr $(expr $win_top - $windowheight) - $win_offsety`
+    edgey[`expr $arraysize + 2`]=`expr $win_bottom + $win_offsety`
+    edgey[`expr $arraysize + 3`]=`expr $win_bottom - $windowheight`
+    arraysize=`expr $arraysize + 4`
+done
+
+#------------------------------------------------------------------------------
+# sort edges arrays
+#------------------------------------------------------------------------------
+
+IFS=$'\n' edgex_sorted=($(sort -n $sort_dir <<<"${edgex[*]}"))
+unset IFS
+IFS=$'\n' edgey_sorted=($(sort -n $sort_dir <<<"${edgey[*]}"))
+unset IFS
+
+#------------------------------------------------------------------------------
+# find next edge in the appropriate direction and move window, if applicable
+#------------------------------------------------------------------------------
+
+if [ "$axis" = 'x' ]; then
+    for x in ${edgex_sorted[*]}; do
+        if [ "$x" -lt "$panel_offsetW" ]; then
+            continue
+        fi
+        if [ "$x" -ge "$screenwidth" ]; then
+            continue
+        fi
+        if [ `expr "$x" \* "$axis_rev"` -gt `expr $windowx \* "$axis_rev"` ]; then
+            exec xdotool getactivewindow windowmove $x y
+        fi
+    done
+else
+    for y in ${edgey_sorted[*]}; do
+        if [ "$y" -lt "$panel_offsetN" ]; then
+            continue
+        fi
+        if [ "$y" -ge `expr "$screenheight" - "$panel_offsetS"` ]; then
+            continue
+        fi
+        if [ `expr "$y" \* "$axis_rev"` -gt `expr $windowy \* "$axis_rev"` ]; then
+            exec xdotool getactivewindow windowmove x $y
+        fi
+    done
+fi
