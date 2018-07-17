@@ -1,11 +1,32 @@
 #!/usr/bin/perl
 #
 #------------------------------------------------------------------------------
-# moves current window to the next edge in one of four directions
+# moves current window to the next edge
+# (within current virtual desktop)
+# in one of four directions
 # takes in one parameter, 'W', 'N', 'E', or 'S'
 # to move windows in that direction
 # uses PERL and xdotool
 #------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# FOLLOWING SECTION REQUIRES USER CONFIGURATION:
+# set offsets based on desktop environment
+# take account of title bar, panel, etc width and height
+#------------------------------------------------------------------------------
+
+$win_offset_x = 0;
+$win_offset_y = 0;
+
+$panel_offset_W = 0;
+$panel_offset_N = 0;
+$panel_offset_E = 0;
+$panel_offset_S = 0;
+
+#------------------------------------------------------------------------------
+# read off direction argument
+#------------------------------------------------------------------------------
+
 if( $ARGV[0] eq "W" ) {
     $axis = 'x';
     $axis_rev = -1;
@@ -23,18 +44,16 @@ elsif( $ARGV[0] eq "S" ) {
     $axis_rev = 1;
 }
 
-#------------------------------------------------------------------------------
-# set offsets based on desktop environment
-# take account of title bar, panel, etc width and height
-#------------------------------------------------------------------------------
-
-$win_offset_x = 20;
-$win_offset_y = 0;
-
-$panel_offset_W = 0;
-$panel_offset_N = 27;
-$panel_offset_E = 0;
-$panel_offset_S = 0;
+if( $axis eq 'x' ) {
+    $win_offset_1 = $win_offset_x;
+    $panel_offset_1 = $panel_offset_W;
+    $panel_offset_2 = $panel_offset_E;
+}
+else {
+    $win_offset_1 = $win_offset_y;
+    $panel_offset_1 = $panel_offset_N;
+    $panel_offset_2 = $panel_offset_S;
+}
 
 #------------------------------------------------------------------------------
 # grab screen and active window geometry
@@ -42,24 +61,22 @@ $panel_offset_S = 0;
 
 $screen = `xdotool getdisplaygeometry`;
 if( $screen =~ /(\d+) (\d+)/ ) {
-    $screen_width = $1;
-    $screen_height = $2;
+    $screen = $1 if( $axis eq 'x' );
+    $screen = $2 if( $axis eq 'y' );
 }
 
 $active_window_pos = `xdotool getactivewindow getwindowgeometry`;
 if( $active_window_pos =~ /Position: (\d+),(\d+)/ ) {
-    $active_window_x = $1;
-    $active_window_y = $2;
+    $active_window_1 = $1 if( $axis eq 'x' );
+    $active_window_1 = $2 if( $axis eq 'y' );
 }
 if( $active_window_pos =~ /Geometry: (\d+)x(\d+)/ ) {
-    $active_window_width = $1;
-    $active_window_height = $2;
+    $active_window = $1 if( $axis eq 'x' );
+    $active_window = $2 if( $axis eq 'y' );
 }
 
-$edge_x[0] = $panel_offset_W +$win_offset_x;
-$edge_x[1] = $screen_width -$panel_offset_E -$active_window_width;
-$edge_y[0] = $panel_offset_N;
-$edge_y[1] = $screen_height -$panel_offset_S -$active_window_height;
+$edge[0] = $panel_offset_1 +$win_offset_1;
+$edge[1] = $screen -$panel_offset_2 -$active_window;
 
 #------------------------------------------------------------------------------
 # grab all other windows geometry and store as edge arrays
@@ -69,6 +86,7 @@ $edge_y[1] = $screen_height -$panel_offset_S -$active_window_height;
 
 foreach $wid (@window_ids) {
     if( $wid == `xdotool getactivewindow` ) { next; }
+
     $win_raw = `xdotool getwindowgeometry $wid`;
     if( $win_raw =~ /Position: (\d+),(\d+)/ ) {
         $win_left = $1;
@@ -78,47 +96,45 @@ foreach $wid (@window_ids) {
         $win_right = $win_left +$1;
         $win_bottom = $win_top +$2;
     }
-    push( @edge_x, $win_left );
-    push( @edge_x, $win_left -$active_window_width -$win_offset_x );
-    push( @edge_x, $win_right +$win_offset_x );
-    push( @edge_x, $win_right -$active_window_width );
-    push( @edge_y, $win_top );
-    push( @edge_y, $win_top -$active_window_height -$win_offset_y );
-    push( @edge_y, $win_bottom +$win_offset_y );
-    push( @edge_y, $win_bottom -$active_window_height );
+
+    if( $axis eq 'x' ) {
+        $win_1 = $win_left;
+        $win_2 = $win_right;
+    } else {
+        $win_1 = $win_top;
+        $win_2 = $win_bottom;
+    }
+
+    $tmp = $win_1; addEdge();
+    $tmp = $win_1 -$active_window -$win_offset_1; addEdge();
+    $tmp = $win_2 +$win_offset_1; addEdge();
+    $tmp = $win_2 -$active_window; addEdge();
 }
 
 #------------------------------------------------------------------------------
 # sort edges arrays
 #------------------------------------------------------------------------------
 
-@edge_x_sorted = sort{ $a <=> $b } @edge_x;
-@edge_y_sorted = sort{ $a <=> $b } @edge_y;
+@edge_sorted = sort{ $a <=> $b } @edge;
 if( $axis_rev == -1 ) {
-    @edge_x_sorted = reverse(@edge_x_sorted);
-    @edge_y_sorted = reverse(@edge_y_sorted);
+    @edge_sorted = reverse(@edge_sorted);
 }
 
 #------------------------------------------------------------------------------
 # find next edge in the appropriate direction and move window, if applicable
 #------------------------------------------------------------------------------
 
-if( $axis eq 'x' ) {
-    foreach $x (@edge_x_sorted) {
-    print "$x\n";
-        if( $x < $panel_offset_W+$win_offset_x ) { next; }
-        if( $x > $screen_width-$panel_offset_E-$active_window_width ) { next; }
-        if( $x*$axis_rev > $active_window_x*$axis_rev ) {
-            exec "xdotool getactivewindow windowmove $x y"
-        }
+foreach $x (@edge_sorted) {
+    if( $x*$axis_rev > $active_window_1*$axis_rev ) {
+        exec "xdotool getactivewindow windowmove $x y" if( $axis eq 'x' );
+        exec "xdotool getactivewindow windowmove x $x" if( $axis eq 'y' );
     }
 }
-else {
-    foreach $y (@edge_y_sorted) {
-        if( $y < $panel_offset_N+$win_offset_y ) { next; }
-        if( $y > $screen_height-$panel_offset_S-$active_window_height ) { next; }
-        if( $y*$axis_rev > $active_window_y*$axis_rev ) {
-            exec "xdotool getactivewindow windowmove x $y"
-        }
+
+sub addEdge {
+    if( $panel_offset_1 +$win_offset_1 < $tmp
+    && $tmp < $screen -$panel_offset_2 -$active_window
+    ) {
+        push( @edge, $tmp );
     }
 }
