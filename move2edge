@@ -12,7 +12,7 @@
 #------------------------------------------------------------------------------
 # FOLLOWING SECTION REQUIRES USER CONFIGURATION:
 # set offsets based on desktop environment
-# take account of title bar, panel, etc width and height
+# take account of title bar, panel, etc width and height, edge snapping
 #------------------------------------------------------------------------------
 
 $win_offset_x = 0;
@@ -22,6 +22,8 @@ $panel_offset_W = 0;
 $panel_offset_N = 0;
 $panel_offset_E = 0;
 $panel_offset_S = 0;
+
+$snap = 30;
 
 #------------------------------------------------------------------------------
 # read off direction argument
@@ -132,8 +134,8 @@ foreach $x (@edge_sorted) {
 }
 
 sub addEdge {
-    if( $panel_offset_1 +$win_offset_1 < $tmp
-    && $tmp < $screen -$panel_offset_2 -$active_window
+    if( $panel_offset_1 +$win_offset_1 +$snap < $tmp
+    && $tmp < $screen -$panel_offset_2 -$active_window -$snap
     ) {
         push( @edge, $tmp );
     }
